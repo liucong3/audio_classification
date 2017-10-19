@@ -5,6 +5,7 @@ def parse_arguments():
     parser = argparse.ArgumentParser(description='DeepSpeech training')
     # wav16000
     parser.add_argument('--raw_data_dir', default='raw_data', help='Path to read raw dataset')
+    parser.add_argument('--data_16000_dir', default='wav_16000', help='Path to save dataset')
     parser.add_argument('--data_dir', default='data', help='Path to save dataset')
     parser.add_argument('--sample_rate', default=16000, type=int, help='Sample rate')
     # manifest
@@ -16,22 +17,22 @@ def parse_arguments():
     parser.add_argument('--num_workers', default=4, type=int, help='Number of workers used in data-loading')
     parser.add_argument('--window_size', default=.02, type=float, help='Window size for spectrogram in seconds')
     parser.add_argument('--window_stride', default=.01, type=float, help='Window stride for spectrogram in seconds')
-    parser.add_argument('--crop_audio_length', default=20, type=float, help='Crop audios exceeding this length in seconds')
+    # parser.add_argument('--crop_audio_length', default=20, type=float, help='Crop audios exceeding this length in seconds')
     # audio model
     parser.add_argument('--hidden_size', default=800, type=int, help='Hidden size of RNNs')
     parser.add_argument('--hidden_layers', default=5, type=int, help='Number of RNN layers')
     parser.add_argument('--num_classes', default=10, type=int, help='Number of audio classes')
     parser.add_argument('--model_path', default='models/best.pth', help='Location to save best validation model')
     # train
-    parser.add_argument('--gpu', default=-1, type=int, help='The device used in training')
+    parser.add_argument('--gpu', default=-1, type=int, help='The single device used in training, -1 means using CPU or ALL GPUs if avaiable.')
     parser.add_argument('--train_manifest', default='train.csv', help='path to train manifest csv')
     parser.add_argument('--eval_manifest', default='eval.csv', help='path to eval manifest csv')
     parser.add_argument('--test_manifest', default='test.csv', help='path to test manifest csv')
     parser.add_argument('--epochs', default=100, type=int, help='Number of training epochs')
-    parser.add_argument('--lr', default=3e-4, type=float, help='initial learning rate')
+    parser.add_argument('--lr', default=1e-2, type=float, help='initial learning rate')
     parser.add_argument('--momentum', default=0.9, type=float, help='momentum')
     parser.add_argument('--max_norm', default=400, type=int, help='Norm cutoff to prevent explosion of gradients')
-    parser.add_argument('--learning_anneal', default=1.1, type=float, help='Annealing applied to learning rate every epoch')
+    parser.add_argument('--learning_anneal', default=1.05, type=float, help='Annealing applied to learning rate every epoch')
     parser.add_argument('--logdir', default='log', type=str, help='Log folder')
     parser.add_argument('--continue_from', type=str, help='Continue from last training epoch')
     parser.add_argument('--plot', action='store_true', help='Plot training progress in terms of accuracies')
@@ -108,17 +109,19 @@ class Logger(object):
             model.load(self.train_info['model_path'])
         else:
             model = model.AudioModel(rnn.BatchRNNLayers, config=self.args.__dict__)
-        if self.args.gpu >= 0:
-            model = torch.nn.DataParallel(model).cuda()
+        if torch.cuda.is_available():
+            if self.args.gpu == -1:
+                model = torch.nn.DataParallel(model).cuda()
+            else:
+                model = model.cuda()
         return model
 
 
-def run_epoch(model, data_loader, optimizer=None, max_norm=None):
+def run_epoch(model, data_loader, is_cuda, optimizer=None, max_norm=None):
     import time
     from tqdm import tqdm
     from torch.autograd import Variable
 
-    is_cuda = isinstance(model, torch.nn.DataParallel)
     is_train = optimizer is not None
     if is_train:
         model.train()
@@ -185,8 +188,7 @@ def anneal_lr(epoch, args, optimizer, logger):
         logger.info('Learning rate annealed to: {lr:.6f}'.format(lr=optim_state['param_groups'][0]['lr']))
 
 def train(args):
-    import loader
-    from tqdm import tqdm
+    is_cuda = args.gpu >= 0
     logger = Logger(args, init_train_info=init_train_info())
 
     model = logger.create_model()
@@ -194,6 +196,7 @@ def train(args):
     optimizer = torch.optim.SGD(parameters, lr=args.lr, momentum=args.momentum, nesterov=True)
     logger.info("Number of parameters: %d" % misc.get_param_size(model))
 
+    import loader
     train_loader, _, _ = loader.get(args, os.path.join(args.manifest_dir, args.train_manifest))
     eval_loader, _, _ = loader.get(args, os.path.join(args.manifest_dir, args.eval_manifest))
     test_loader, _, _ = loader.get(args, os.path.join(args.manifest_dir, args.test_manifest))
@@ -204,19 +207,19 @@ def train(args):
         logger.train_info['epoch'] += 1
 
         model.train()
-        acc, batch_time, loss = run_epoch(model, train_loader, optimizer, args.max_norm)
+        acc, batch_time, loss = run_epoch(model, train_loader, is_cuda, optimizer, args.max_norm)
         logger.info('Epoch: {}, train_acc: {}, train_loss: {}, train_batch_time: {}'.format(epoch + 1, acc, loss, batch_time))
         logger.train_info['train_loss'].append(loss)
         logger.train_info['train_acc'].append(acc)
 
         model.eval()
-        acc, batch_time, _ = run_epoch(model, eval_loader)
+        acc, batch_time, _ = run_epoch(model, eval_loader, is_cuda)
         logger.info('Epoch: {}, eval_acc: {}, eval_batch_time: {}'.format(epoch + 1, acc, batch_time))
         logger.train_info['eval_acc'].append(acc)
 
         if acc > logger.train_info['best_eval_acc']:
             logger.train_info['best_eval_acc'] = acc
-            acc, batch_time, _ = run_epoch(model, test_loader)
+            acc, batch_time, _ = run_epoch(model, test_loader, is_cuda)
             logger.info('Epoch: {}, test_acc: {}, test_batch_time: {}'.format(epoch + 1, acc, batch_time))
             logger.train_info['test_acc'].append(acc)
 
@@ -233,4 +236,6 @@ def train(args):
 
 if __name__ == '__main__':
     args = parse_arguments()
+    if args.gpu >= 0:
+        misc.prepare_single_device(args)
     train(args)

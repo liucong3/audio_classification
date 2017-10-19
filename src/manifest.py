@@ -1,9 +1,11 @@
-import tqdm, fnmatch, random, io, subprocess
+import torch, tqdm, fnmatch, random, io, subprocess
 from tqdm import tqdm
 
 def get_audio_length(path):
-    output = subprocess.check_output(['soxi -D \"%s\"' % path.strip()], shell=True)
-    return float(output)
+    # output = subprocess.check_output(['soxi -D \"%s\"' % path.strip()], shell=True)
+    # return float(output)
+    audio = torch.load(path)
+    return audio.size(1)
 
 def sort_files(data_files):
     data = []
@@ -29,9 +31,9 @@ if __name__ == '__main__':
     args = parse_arguments()
 
     wav_files = [os.path.join(dirpath, f)
-                 for dirpath, dirnames, files in os.walk(args.target_dir)
-                 for f in fnmatch.filter(files, '*.wav')]
-    print 'Number of WAV files: {}'.format(len(wav_files))
+                 for dirpath, dirnames, files in os.walk(args.data_dir)
+                 for f in fnmatch.filter(files, '*.wav.pth')]
+    print 'Number of files: {}'.format(len(wav_files))
     random.shuffle(wav_files)
     train_size = len(wav_files) - args.eval_size - args.test_size
     train_data = wav_files[0 : train_size]

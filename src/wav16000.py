@@ -34,10 +34,10 @@ if __name__ == '__main__':
     if not os.path.exists(args.raw_data_dir):
         print 'Raw data folder "{}" does not exist.'.format(args.raw_data_dir)
         proceed = 'n'
-    if proceed == 'y' and os.path.exists(args.data_dir):
-        prompt = 'To proceed, everything in folder "{}" will be erased. [y/N]?'.format(args.data_dir)
+    if proceed == 'y' and os.path.exists(args.data_16000_dir):
+        prompt = 'To proceed, everything in folder "{}" will be erased. [y/N]?'.format(args.data_16000_dir)
         proceed = raw_input(prompt)
     if proceed == 'y':
-        transfer(args.raw_data_dir, args.data_dir, args.sample_rate)
+        transfer(args.raw_data_dir, args.data_16000_dir, args.sample_rate)
 
 

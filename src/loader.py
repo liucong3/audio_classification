@@ -1,28 +1,7 @@
-import torch, torchaudio, librosa, scipy, numpy
-from collections import defaultdict
-
-def load_audio(audio_path):
-    sound, sample_rate = torchaudio.load(audio_path)
-    assert sound.dim() == 1 or sound.dim() == 2
-    if sound.dim() > 1:
-        sound = sound.mean(1)
-        if sound.dim() > 1:
-            sound = sound.squeeze(1)
-    return sound, sample_rate  
- 
-def audio_spectrogram(sound, sample_rate, window_size, window_stride):
-    sound = sound.numpy()
-    win_length = int(sample_rate * window_size)
-    # print 'win_length', win_length, 'hop_length', 1 + sound.shape[0] / int(sample_rate * window_stride)
-    stft = librosa.stft(sound, 
-        n_fft=win_length, 
-        hop_length=int(sample_rate * window_stride), 
-        win_length=win_length, 
-        window=scipy.signal.hamming)
-    spectrogram, phase = librosa.magphase(stft)
-    spectrogram = torch.FloatTensor(spectrogram)
-    spectrogram = spectrogram.log1p() # S = log(S+1)
-    return spectrogram # spectrogram.size() = (#spectrum, hops)
+import torch, numpy
+from collections import defaultdict 
+from torch.utils.data import Dataset, DataLoader
+from torch.utils.data.sampler import Sampler
 
 def normalize(data):
     mean, std = data.mean(), data.std()
@@ -32,22 +11,21 @@ def get_manifest(manifest_path):
     with open(manifest_path) as file:
         return [line.strip().split(',') for line in file.readlines()]
 
+class SpectrogramDataset(Dataset):
 
-class SpectrogramDataset(torch.utils.data.Dataset):
-
-    def __init__(self, manifest_path, args, transform=None):
+    # def __init__(self, manifest_path, args, transform=None):
+    def __init__(self, manifest_path, args):
         super(SpectrogramDataset, self).__init__()
         self.window_size = args.window_size
         self.window_stride = args.window_stride
         self.samples = get_manifest(manifest_path)
-        self.transform = transform
+        # self.transform = transform
 
     def __getitem__(self, index):
         audio_path, target, size = self.samples[index]
-        sound, sample_rate = load_audio(audio_path)
-        if self.transform is not None:
-            sound = self.transform(sound)
-        spectrogram = audio_spectrogram(sound, sample_rate, self.window_size, self.window_stride)
+        spectrogram = torch.load(audio_path)
+        # if self.transform is not None:
+        #     spectrogram = self.transform(spectrogram)
         spectrogram = normalize(spectrogram)
         return spectrogram, int(target)
 
@@ -65,7 +43,7 @@ def spectrogram_dataset_collate_fn(batch):
     return inputs, targets
 
 
-class BucketingSampler(torch.utils.data.sampler.Sampler):
+class BucketingSampler(Sampler):
 
     def __init__(self, manifest_path):
         samples = get_manifest(manifest_path)
@@ -113,14 +91,15 @@ class RandPadTrim(object):
 def get(args, manifest_path=None, dataset=None, bucketing_sampler=None, no_bucketing=False):
     if dataset is None:
         assert manifest_path is not None
-        crop_audio_length = int(args.crop_audio_length * args.sample_rate)
-        dataset = SpectrogramDataset(manifest_path, args, transform=RandPadTrim(crop_audio_length))
+        # crop_audio_length = int(args.crop_audio_length * args.sample_rate)
+        # dataset = SpectrogramDataset(manifest_path, args, transform=RandPadTrim(crop_audio_length))
+        dataset = SpectrogramDataset(manifest_path, args)
     if no_bucketing:
         bucketing_sampler = None
     elif bucketing_sampler is None:
         assert manifest_path is not None
         bucketing_sampler = BucketingSampler(manifest_path)
-    dataloader = torch.utils.data.DataLoader(dataset, batch_size=args.batch_size, num_workers=args.num_workers, 
+    dataloader = DataLoader(dataset, batch_size=args.batch_size, num_workers=args.num_workers, 
                                             collate_fn=spectrogram_dataset_collate_fn, sampler=bucketing_sampler)
     return dataloader, dataset, bucketing_sampler
 
