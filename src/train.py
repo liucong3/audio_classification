@@ -128,11 +128,9 @@ def run_epoch(model, data_loader, is_cuda, optimizer=None, max_norm=None):
     else:
         model.eval()
 
-    batch_time = misc.Average()
     avg_loss = misc.Average()
     avg_acc = misc.Average()
 
-    end = time.time()
     for i, (input, target) in tqdm(enumerate(data_loader), total=len(data_loader)):
         if is_train:
             input = Variable(input, requires_grad=False)
@@ -163,9 +161,6 @@ def run_epoch(model, data_loader, is_cuda, optimizer=None, max_norm=None):
         if is_cuda:
             torch.cuda.synchronize()
 
-        batch_time.update(time.time() - end)
-        end = time.time()
-
     return avg_acc.avg, batch_time.avg, avg_loss.avg
 
 
@@ -188,7 +183,7 @@ def anneal_lr(epoch, args, optimizer, logger):
         logger.info('Learning rate annealed to: {lr:.6f}'.format(lr=optim_state['param_groups'][0]['lr']))
 
 def train(args):
-    is_cuda = args.gpu >= 0
+    is_cuda = torch.cuda.is_available()
     logger = Logger(args, init_train_info=init_train_info())
 
     model = logger.create_model()
