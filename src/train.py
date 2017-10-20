@@ -94,7 +94,7 @@ class Logger(object):
         if isinstance(model, torch.nn.DataParallel):
             model = model.module
         if model_path is None:
-            if 'model_path' in self.train_info and os.path.exists(self.train_info['model_path']):
+            if 'model_path' in self.train_info and os.path.exists(os.join(self.logdir, self.train_info['model_path'])):
                 print("Removing old model {}".format(self.train_info['model_path']))
                 os.remove(os.join(self.logdir, self.train_info['model_path']))
             model_path = misc.datetimestr() + '.model.pth'
@@ -161,7 +161,7 @@ def run_epoch(model, data_loader, is_cuda, optimizer=None, max_norm=None):
         if is_cuda:
             torch.cuda.synchronize()
 
-    return avg_acc.avg, batch_time.avg, avg_loss.avg
+    return avg_acc.avg, avg_loss.avg
 
 
 def init_train_info():
@@ -202,20 +202,20 @@ def train(args):
         logger.train_info['epoch'] += 1
 
         model.train()
-        acc, batch_time, loss = run_epoch(model, train_loader, is_cuda, optimizer, args.max_norm)
-        logger.info('Epoch: {}, train_acc: {}, train_loss: {}, train_batch_time: {}'.format(epoch + 1, acc, loss, batch_time))
+        acc, loss = run_epoch(model, train_loader, is_cuda, optimizer, args.max_norm)
+        logger.info('Epoch: {}, train_acc: {}, train_loss: {}'.format(epoch + 1, acc, loss))
         logger.train_info['train_loss'].append(loss)
         logger.train_info['train_acc'].append(acc)
 
         model.eval()
-        acc, batch_time, _ = run_epoch(model, eval_loader, is_cuda)
-        logger.info('Epoch: {}, eval_acc: {}, eval_batch_time: {}'.format(epoch + 1, acc, batch_time))
+        acc, _ = run_epoch(model, eval_loader, is_cuda)
+        logger.info('Epoch: {}, eval_acc: {}'.format(epoch + 1, acc))
         logger.train_info['eval_acc'].append(acc)
 
         if acc > logger.train_info['best_eval_acc']:
             logger.train_info['best_eval_acc'] = acc
-            acc, batch_time, _ = run_epoch(model, test_loader, is_cuda)
-            logger.info('Epoch: {}, test_acc: {}, test_batch_time: {}'.format(epoch + 1, acc, batch_time))
+            acc, _ = run_epoch(model, test_loader, is_cuda)
+            logger.info('Epoch: {}, test_acc: {}'.format(epoch + 1, acc))
             logger.train_info['test_acc'].append(acc)
 
             if acc > logger.train_info['best_test_acc']:
