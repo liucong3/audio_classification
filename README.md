@@ -13,4 +13,4 @@ Steps to train a model:
 <br>`python src/train.py`
 <br>The best model will be store in `./log/<date_time>/best.model.pth`
 * TODO
-Correct the train/eval/test splits [AVOID COMMON PITFALLS](https://urbansounddataset.weebly.com/urbansound8k.html)
+<br>Correct the train/eval/test splits: [AVOID COMMON PITFALLS](https://urbansounddataset.weebly.com/urbansound8k.html)
